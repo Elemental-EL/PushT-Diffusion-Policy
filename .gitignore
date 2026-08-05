@@ -1,0 +1,29 @@
+# Environments
+.venv/
+env/
+venv/
+ENV/
+*.conda/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Data and Checkpoints
+data/
+checkpoints/
+*.pt
+*.pth
+*.zarr
+*.hdf5
+*.npz
+
+# Logs
+runs/
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
