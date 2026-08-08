@@ -33,3 +33,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Execution Outputs & Ephemeral Logs
+evaluation_results.png
+logs/
+*.json

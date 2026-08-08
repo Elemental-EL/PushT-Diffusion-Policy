@@ -82,6 +82,8 @@ class DDPMScheduler(nn.Module):
         sqrt_one_minus_alpha_cumprod_t = self.sqrt_one_minus_alphas_cumprod[t]
         pred_original_sample = (sample - sqrt_one_minus_alpha_cumprod_t * model_output) / torch.sqrt(alpha_cumprod_t)
         
+        pred_original_sample = torch.clamp(pred_original_sample, -1.0, 1.0)
+        
         pred_prev_sample = (torch.sqrt(alpha_t) * (1 - self.alphas_cumprod[t-1]) * sample + 
                             beta_t * torch.sqrt(self.alphas_cumprod[t-1]) * pred_original_sample) / (1 - alpha_cumprod_t) if t > 0 else pred_original_sample
 
