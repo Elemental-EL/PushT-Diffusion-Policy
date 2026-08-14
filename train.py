@@ -7,6 +7,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from config import cfg
 from dataset.pusht_dataset import PushTStateDataset
 from models.core import ConditionalUnet1D
 from models.diffusion import DDPMScheduler
@@ -77,36 +78,29 @@ def train() -> None:
     print(f"  DIFFUSION POLICY TRAINING ENGINE | Device: {device}")
     print("=" * 80)
 
-    batch_size = 256
-    num_epochs = 5000
-    lr = 1e-4
-    weight_decay = 1e-6
-    warmup_steps = 500
-    ema_decay = 0.9999
-
     dataset = PushTStateDataset(
-        dataset_path='data/pusht_cchi_v7_replay.zarr',
-        pred_horizon=128,
-        obs_horizon=2,
-        action_horizon=8
+        dataset_path=cfg.dataset_path,
+        pred_horizon=cfg.pred_horizon,
+        obs_horizon=cfg.obs_horizon,
+        action_horizon=cfg.action_horizon
     )
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    total_steps = num_epochs * len(dataloader)
+    dataloader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True, drop_last=True)
+    total_steps = cfg.num_epochs * len(dataloader)
 
-    unet = ConditionalUnet1D().to(device)
-    ema = EMAModel(unet, decay=ema_decay).to(device)
+    unet = ConditionalUnet1D(action_dim=cfg.action_dim, obs_dim=cfg.obs_dim, obs_horizon=cfg.obs_horizon, global_cond_dim=cfg.global_cond_dim).to(device)
+    ema = EMAModel(unet, decay=cfg.ema_decay).to(device)
     noise_scheduler = DDPMScheduler(num_train_timesteps=100).to(device)
 
-    optimizer = torch.optim.AdamW(unet.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(unet.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer, 
-        num_warmup_steps=warmup_steps, 
+        num_warmup_steps=cfg.warmup_steps, 
         num_training_steps=total_steps
     )
     loss_fn = nn.MSELoss()
 
-    os.makedirs('checkpoints', exist_ok=True)
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs(cfg.ckpt_dir, exist_ok=True)
+    os.makedirs(cfg.log_dir, exist_ok=True)
 
     metrics_history = {
         'epoch': [],
@@ -119,10 +113,10 @@ def train() -> None:
     best_loss = float('inf')
     start_total_time = time.time()
 
-    print(f"Total Epochs: {num_epochs} | Total Iterations: {total_steps} | Batch Size: {batch_size}")
+    print(f"Total Epochs: {cfg.num_epochs} | Total Iterations: {total_steps} | Batch Size: {cfg.batch_size}")
     print("-" * 80)
 
-    for epoch in range(num_epochs):
+    for epoch in range(cfg.num_epochs):
         epoch_start_time = time.time()
         epoch_loss = 0.0
 
@@ -158,17 +152,17 @@ def train() -> None:
 
         if avg_loss < best_loss:
             best_loss = avg_loss
-            torch.save(unet.state_dict(), 'checkpoints/best_model_raw.pth')
-            torch.save(ema.model.state_dict(), 'checkpoints/best_model_ema.pth')
+            torch.save(unet.state_dict(), f'{cfg.ckpt_dir}/best_model_raw.pth')
+            torch.save(ema.model.state_dict(), f'{cfg.ckpt_dir}/best_model_ema.pth')
 
         if epoch % 100 == 0 and epoch > 0:
-            torch.save(ema.model.state_dict(), f'checkpoints/model_epoch_{epoch}_ema.pth')
+            torch.save(ema.model.state_dict(), f'{cfg.ckpt_dir}/model_epoch_{epoch}_ema.pth')
 
-        if epoch % 50 == 0 or epoch == num_epochs - 1:
+        if epoch % 50 == 0 or epoch == cfg.num_epochs - 1:
             elapsed = time.time() - start_total_time
-            remaining = (elapsed / (epoch + 1)) * (num_epochs - (epoch + 1))
+            remaining = (elapsed / (epoch + 1)) * (cfg.num_epochs - (epoch + 1))
             print(
-                f"Epoch [{epoch:04d}/{num_epochs:04d}] | "
+                f"Epoch [{epoch:04d}/{cfg.num_epochs:04d}] | "
                 f"Loss: {avg_loss:.6f} | "
                 f"Best: {best_loss:.6f} | "
                 f"LR: {current_lr:.4e} | "
@@ -177,7 +171,7 @@ def train() -> None:
                 f"ETA: {format_duration(remaining)}"
             )
 
-    with open('logs/training_metrics.json', 'w') as f:
+    with open(f'{cfg.log_dir}/training_metrics.json', 'w') as f:
         json.dump(metrics_history, f, indent=4)
 
     total_training_time = time.time() - start_total_time

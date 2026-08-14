@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from config import cfg
 from dataset.normalization import normalize_data, unnormalize_data
 from dataset.pusht_dataset import PushTStateDataset
 from env.pusht_wrapper import get_pusht_env
@@ -47,29 +48,24 @@ def evaluate_checkpoint(
     """
     unet.load_state_dict(torch.load(ckpt_path, map_location=device))
     unet.eval()
-
-    pred_horizon = 128
-    obs_horizon = 2
-    action_horizon = 8
-    max_steps = 300
     
     success_count = 0
 
     for seed in test_seeds:
         env.seed(seed)
         obs = env.reset()
-        obs_deque = deque([obs] * obs_horizon, maxlen=obs_horizon)
+        obs_deque = deque([obs] * cfg.obs_horizon, maxlen=cfg.obs_horizon)
         
         step_idx = 0
         max_coverage = 0.0
         done = False
 
-        while not done and step_idx < max_steps:
+        while not done and step_idx < cfg.max_env_steps:
             obs_seq = np.stack(obs_deque)
             nobs = normalize_data(obs_seq, stats['state'])
             nobs_tensor = torch.tensor(nobs, dtype=torch.float32, device=device).unsqueeze(0)
 
-            naction = torch.randn((1, pred_horizon, 2), device=device)
+            naction = torch.randn((1, cfg.pred_horizon, 2), device=device)
             for k in reversed(range(100)):
                 k_tensor = torch.tensor([k], device=device).long()
                 with torch.no_grad():
@@ -79,7 +75,7 @@ def evaluate_checkpoint(
             naction = naction.squeeze(0).cpu().numpy()
             action_pred = unnormalize_data(naction, stats['action'])
 
-            for i in range(action_horizon):
+            for i in range(cfg.action_horizon):
                 obs, reward, done, _ = env.step(action_pred[i])
                 obs_deque.append(obs)
                 max_coverage = max(max_coverage, reward)
@@ -103,14 +99,14 @@ def run_training_stability_analysis() -> None:
     test_seeds = list(range(3000, 3050))
     
     print("Extracting normalization statistics...")
-    dataset = PushTStateDataset('data/pusht_cchi_v7_replay.zarr', 128, 2, 8)
+    dataset = PushTStateDataset(cfg.dataset_path, cfg.pred_horizon, cfg.obs_horizon, cfg.action_horizon)
     stats = dataset.stats
 
-    unet = ConditionalUnet1D().to(device)
+    unet = ConditionalUnet1D(action_dim=cfg.action_dim, obs_dim=cfg.obs_dim, obs_horizon=cfg.obs_horizon, global_cond_dim=cfg.global_cond_dim).to(device)
     noise_scheduler = DDPMScheduler(num_train_timesteps=100).to(device)
     env = get_pusht_env()
 
-    ckpt_files = glob.glob('checkpoints/model_epoch_*_ema.pth')
+    ckpt_files = glob.glob(f'{cfg.ckpt_dir}/model_epoch_*_ema.pth')
     
     epoch_to_ckpt = {}
     for f in ckpt_files:
@@ -143,8 +139,8 @@ def run_training_stability_analysis() -> None:
         results[epoch] = sr
         print(f"  Epoch {epoch:04d} | Success Rate: {sr * 100:.1f}%")
 
-    os.makedirs('logs', exist_ok=True)
-    with open('logs/training_stability.json', 'w') as f:
+    os.makedirs(cfg.log_dir, exist_ok=True)
+    with open(f'{cfg.log_dir}/training_stability.json', 'w') as f:
         json.dump(results, f, indent=4)
 
     success_rates = list(results.values())

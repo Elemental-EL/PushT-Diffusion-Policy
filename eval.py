@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from config import cfg
 from dataset.normalization import normalize_data, unnormalize_data
 from dataset.pusht_dataset import PushTStateDataset
 from env.pusht_wrapper import get_pusht_env
@@ -29,18 +30,14 @@ def evaluate() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Running evaluation on: {device}")
 
-    pred_horizon = 128
-    obs_horizon = 2
-    action_horizon = 8
-    max_steps = 300
     seeds = [42, 100, 2026, 777, 999]
 
     print("Extracting normalization statistics from dataset...")
-    dataset = PushTStateDataset('data/pusht_cchi_v7_replay.zarr', pred_horizon, obs_horizon, action_horizon)
+    dataset = PushTStateDataset(cfg.dataset_path, cfg.pred_horizon, cfg.obs_horizon, cfg.action_horizon)
     stats = dataset.stats
 
-    unet = ConditionalUnet1D().to(device)
-    unet.load_state_dict(torch.load('checkpoints/best_model_ema.pth', map_location=device))
+    unet = ConditionalUnet1D(action_dim=cfg.action_dim, obs_dim=cfg.obs_dim, obs_horizon=cfg.obs_horizon, global_cond_dim=cfg.global_cond_dim).to(device)
+    unet.load_state_dict(torch.load(f'{cfg.ckpt_dir}/best_model_ema.pth', map_location=device))
     unet.eval()
     
     noise_scheduler = DDPMScheduler(num_train_timesteps=100).to(device)
@@ -52,7 +49,7 @@ def evaluate() -> None:
         env.seed(seed)
         obs = env.reset()
         
-        obs_deque = deque([obs] * obs_horizon, maxlen=obs_horizon)
+        obs_deque = deque([obs] * cfg.obs_horizon, maxlen=cfg.obs_horizon)
         
         agent_path = []
         block_path = []
@@ -62,12 +59,12 @@ def evaluate() -> None:
         max_reward = 0.0
         final_reward = 0.0
 
-        while not done and step_idx < max_steps:
+        while not done and step_idx < cfg.max_env_steps:
             obs_seq = np.stack(obs_deque)
             nobs = normalize_data(obs_seq, stats['state'])
             nobs_tensor = torch.tensor(nobs, dtype=torch.float32, device=device).unsqueeze(0)
             
-            naction = torch.randn((1, pred_horizon, 2), device=device)
+            naction = torch.randn((1, cfg.pred_horizon, 2), device=device)
             for k in reversed(range(100)):
                 k_tensor = torch.tensor([k], device=device).long()
                 with torch.no_grad():
@@ -77,7 +74,7 @@ def evaluate() -> None:
             naction = naction.squeeze(0).cpu().numpy()
             action_pred = unnormalize_data(naction, stats['action'])
             
-            for i in range(action_horizon):
+            for i in range(cfg.action_horizon):
                 obs, reward, done, _ = env.step(action_pred[i])
                 
                 obs_deque.append(obs)

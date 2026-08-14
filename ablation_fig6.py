@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from config import cfg
 from dataset.normalization import normalize_data, unnormalize_data
 from dataset.pusht_dataset import PushTStateDataset
 from env.pusht_wrapper import get_pusht_env
@@ -38,11 +39,8 @@ def evaluate_policy(unet, noise_scheduler, stats, env, device, ta: int, latency:
     Returns:
         float: The mean success rate (coverage >= 0.95) across all test seeds.
     """
-    pred_horizon = 128
-    obs_horizon = 2
-    max_steps = 300
     
-    buffer_maxlen = obs_horizon + latency
+    buffer_maxlen = cfg.obs_horizon + latency
     
     success_count = 0
 
@@ -56,16 +54,16 @@ def evaluate_policy(unet, noise_scheduler, stats, env, device, ta: int, latency:
         max_coverage = 0.0
         done = False
 
-        while not done and step_idx < max_steps:
+        while not done and step_idx < cfg.max_env_steps:
             if latency > 0:
-                obs_seq = np.stack(list(obs_buffer)[:obs_horizon])
+                obs_seq = np.stack(list(obs_buffer)[:cfg.obs_horizon])
             else:
                 obs_seq = np.stack(list(obs_buffer))
                 
             nobs = normalize_data(obs_seq, stats['state'])
             nobs_tensor = torch.tensor(nobs, dtype=torch.float32, device=device).unsqueeze(0)
 
-            naction = torch.randn((1, pred_horizon, 2), device=device)
+            naction = torch.randn((1, cfg.pred_horizon, 2), device=device)
             for k in reversed(range(100)):
                 k_tensor = torch.tensor([k], device=device).long()
                 with torch.no_grad():
@@ -101,11 +99,11 @@ def run_fig6_ablations() -> None:
     test_seeds = list(range(2000, 2000 + num_seeds))
     
     print("Loading dataset normalization statistics...")
-    dataset = PushTStateDataset('data/pusht_cchi_v7_replay.zarr', 128, 2, 8)
+    dataset = PushTStateDataset(cfg.dataset_path, cfg.pred_horizon, cfg.obs_horizon, cfg.action_horizon)
     stats = dataset.stats
 
-    unet = ConditionalUnet1D().to(device)
-    unet.load_state_dict(torch.load('checkpoints/best_model_ema.pth', map_location=device))
+    unet = ConditionalUnet1D(action_dim=cfg.action_dim, obs_dim=cfg.obs_dim, obs_horizon=cfg.obs_horizon, global_cond_dim=cfg.global_cond_dim).to(device)
+    unet.load_state_dict(torch.load(f'{cfg.ckpt_dir}/best_model_ema.pth', map_location=device))
     unet.eval()
     noise_scheduler = DDPMScheduler(num_train_timesteps=100).to(device)
     env = get_pusht_env()
@@ -126,8 +124,8 @@ def run_fig6_ablations() -> None:
         results['latency'][l] = sr
         print(f"  Latency = {l:d} steps | Success Rate: {sr * 100:.1f}%")
 
-    os.makedirs('logs', exist_ok=True)
-    with open('logs/ablation_fig6.json', 'w') as f:
+    os.makedirs(cfg.log_dir, exist_ok=True)
+    with open(f'{cfg.log_dir}/ablation_fig6.json', 'w') as f:
         json.dump(results, f, indent=4)
 
     ta_keys = list(results['action_horizon'].keys())
