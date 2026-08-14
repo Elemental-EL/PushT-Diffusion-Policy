@@ -29,7 +29,7 @@ def evaluate() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Running evaluation on: {device}")
 
-    pred_horizon = 16
+    pred_horizon = 128
     obs_horizon = 2
     action_horizon = 8
     max_steps = 300

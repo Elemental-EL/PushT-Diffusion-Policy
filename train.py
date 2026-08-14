@@ -78,7 +78,7 @@ def train() -> None:
     print("=" * 80)
 
     batch_size = 256
-    num_epochs = 4500
+    num_epochs = 5000
     lr = 1e-4
     weight_decay = 1e-6
     warmup_steps = 500
@@ -86,7 +86,7 @@ def train() -> None:
 
     dataset = PushTStateDataset(
         dataset_path='data/pusht_cchi_v7_replay.zarr',
-        pred_horizon=16,
+        pred_horizon=128,
         obs_horizon=2,
         action_horizon=8
     )
@@ -161,7 +161,7 @@ def train() -> None:
             torch.save(unet.state_dict(), 'checkpoints/best_model_raw.pth')
             torch.save(ema.model.state_dict(), 'checkpoints/best_model_ema.pth')
 
-        if epoch % 500 == 0 and epoch > 0:
+        if epoch % 100 == 0 and epoch > 0:
             torch.save(ema.model.state_dict(), f'checkpoints/model_epoch_{epoch}_ema.pth')
 
         if epoch % 50 == 0 or epoch == num_epochs - 1:
